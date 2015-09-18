@@ -18,27 +18,6 @@ class Controller:
 		self.target_distance = rospy.get_param('~target_distance') # user-input distance from wall
 		self.stop()
 
-	# def adjust_dist(self,scan):
-	# 	''' Method called by Subscriber.  Bot moves to user-specified distance. '''
-		
-	# 	factor = 1
-	# 	error = scan.ranges[0] - self.target_distance
-	# 	speed = error * factor
-
-	# 	if speed > 1:
-	# 		speed = 1
-
-	# 	if error > 0.01:
-	# 		self.forward(speed)
-	# 		print 'in front: ' , scan.ranges[0]
-	# 	else:
-	# 		self.stop()
-	# 		print 'wall_dist acquired'
-	# 		self.charge(scan)
-	# 		return
-
-	### Scenarios
-
 	def charge(self, scan):
 		''' if parallel to wall, go forward.  if not, rotate until parallel '''
 
@@ -53,7 +32,6 @@ class Controller:
 			self.spin_left()
 
 	### Manipulating bot
-
 	def forward(self, x):
 		''' drive bot forward '''
 		self.command.linear.x = x
