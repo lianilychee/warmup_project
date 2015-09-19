@@ -15,7 +15,7 @@ class Controller:
 
 		self.command = Twist()
 		self.threshold = 0.05
-		self.target_distance = rospy.get_param('~target_distance') # user-input distance from wall
+		# self.target_distance = rospy.get_param('~target_distance') # user-input distance from wall
 		self.stop()
 
 	def charge(self, scan):
