@@ -13,19 +13,22 @@ speed_factor = .6
 personal_space = .5
 
 class PriorityQueue:
+  ''' the closest point is arranged first '''
   def __init__(self):
-    self.elements = []
-    
+      self.elements = []
+  
   def empty(self):
-    return len(self.elements) == 0
-    
+      return len(self.elements) == 0
+  
   def put(self, item, priority):
-    heapq.heappush(self.elements, (priority, item))
-    
+      heapq.heappush(self.elements, (priority, item))
+  
   def get(self):
-    return heapq.heappop(self.elements)[1]
+      return heapq.heappop(self.elements)[1]
+
 
 class Graph:
+  ''' creates path for bot to follow '''  
   def __init__(self):
     self.edges = {}
 
@@ -90,7 +93,9 @@ class Graph:
     path.reverse()
     return path
 
+
 class GraphGenerator:
+  ''' generate the network of nodes, called by Controller '''
   def __init__(self, start, goal):
     self.start = start
     self.goal = goal
@@ -122,6 +127,50 @@ class GraphGenerator:
         if j != top_bound:
           graph.add_edge((i, j), (i, clean(j + self.grid_spacing)))
     return graph
+
+class Follow_path:
+    ''' control bot to follow path returned by class Graph
+    assume class Graph returns list of tuples.
+    path = [(x1,y1),(x2,y2),(x3,y3)] '''
+
+    def __init__(self):
+
+    def recalculate(odom,path):
+      ''' define waypoint in relation to base_link. return angle and distance. '''
+
+      # qty = len(path) # this is the number of waypoints to hit
+
+      next_waypoint = path[0]
+
+      next_distance = math.sqrt((next_waypoint[0]-base_link[0])**2 + (next_waypoint[1]-base_link[1])**2)
+
+      next_angle = math.atan( (next_waypoint[1]-base_link[1])/(next_waypoint[0]-base_link[0]) ) # returns in RADIANS
+
+      # update list
+      new_path = path[1:len(path)]
+
+      # print next_distance, next_angle, new_path      
+
+  def hit_waypoint(odom,path,distance,angle):
+    ''' go towards waypoint given '''
+
+    threshold = 0.1
+
+    # assume odom_heading is in RADIANS
+    # also, assuming we can /get/ odom_heading
+
+    if (waypoint_x > bot_x) & (abs(odom_heading-angle) > threshold):
+      self.spin_left()
+    elif (bot_x > waypoint_x) & (abs(odom_heading-angle) > threshold):
+      self.spin_right()
+    else:
+      self.forward()
+
+    if (abs(base_link[0]-waypoint[0]) > threshold) & (abs(base_link[1]-waypoint[1]) > threshold):
+      pass
+    else:
+      self.stop()
+
 
 class Controller:
   def __init__(self):
@@ -156,6 +205,9 @@ class Controller:
 
 def clean(num):
   return float(round(num, 1))
+
+
+### GLOBAL METHODS
 
 def tr_to_xy(pair):
   ''' convert a theta, radius pair to an x, y pair '''
