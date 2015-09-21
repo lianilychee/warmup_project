@@ -13,33 +13,50 @@ speed_factor = .6
 personal_space = .5
 
 class PriorityQueue:
-    def __init__(self):
-        self.elements = []
+  def __init__(self):
+    self.elements = []
     
-    def empty(self):
-        return len(self.elements) == 0
+  def empty(self):
+    return len(self.elements) == 0
     
-    def put(self, item, priority):
-        heapq.heappush(self.elements, (priority, item))
+  def put(self, item, priority):
+    heapq.heappush(self.elements, (priority, item))
     
-    def get(self):
-        return heapq.heappop(self.elements)[1]
+  def get(self):
+    return heapq.heappop(self.elements)[1]
 
 class Graph:
   def __init__(self):
     self.edges = {}
-    self.weights = {}
 
-  def neighbors(self, id):
-    return self.edges[id]
+  def add_edge(self, pt1, pt2):
+    if pt1 not in self.edges:
+      self.edges[pt1] = [pt2]
+    else:
+      self.edges[pt1].append(pt2)
 
-  def cost(self, a, b):
-      return self.weights.get(b, 0)
+  def remove_point(self, pt1):
+    if pt1 in self.edges:
+      for pt2 in self.edges[pt1]:
+        self.edges[pt2].remove(pt1)
+      self.edges.pop(pt1)
+
+  def neighbors(self, pt):
+    return self.edges[pt]
+
+  def cost(self, pt1, pt2):
+    (x1, y1) = pt1
+    (x2, y2) = pt2
+    return clean(math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2))
 
   def heuristic(self, a, b):
-      (x1, y1) = a
-      (x2, y2) = b
-      return abs(x1 - x2) + abs(y1 - y2)
+    (x1, y1) = a
+    (x2, y2) = b
+    return abs(x1 - x2) + abs(y1 - y2)
+
+  def navigate(self, start, goal):
+    came_from, cost_so_far = self.a_star_search(start, goal)
+    return self.reconstruct_path(came_from, start, goal)
 
   def a_star_search(self, start, goal):
     frontier = PriorityQueue()
@@ -62,8 +79,16 @@ class Graph:
           priority = new_cost + self.heuristic(goal, next)
           frontier.put(next, priority)
           came_from[next] = current
-
     return came_from, cost_so_far
+
+  def reconstruct_path(self, came_from, start, goal):
+    current = goal
+    path = [current]
+    while current != start:
+        current = came_from[current]
+        path.append(current)
+    path.reverse()
+    return path
 
 class GraphGenerator:
   def __init__(self, start, goal):
@@ -84,11 +109,19 @@ class GraphGenerator:
   def generate(self):
     graph = Graph()
     [left_bound, right_bound, bottom_bound, top_bound] = self.calculate_bounds()
-    hor_grids = abs(left_bound - right_bound) / self.grid_spacing
-    vert_grids = abs(bottom_bound - top_bound) / self.grid_spacing
-    for i in np.linspace(left_bound, right_bound, num=hor_grids, endpoint=True):
-      for j in np.linspace(bottom_bound, top_bound, num=vert_grids, endpoint=True):
-
+    for i in np.arange(left_bound, right_bound, self.grid_spacing):
+      i = clean(i)
+      for j in np.arange(bottom_bound, top_bound, self.grid_spacing):
+        j = clean(j)
+        if i != left_bound:
+          graph.add_edge((i, j), (clean(i - self.grid_spacing), j))
+        if i != right_bound:
+          graph.add_edge((i, j), (clean(i + self.grid_spacing), j))
+        if j != bottom_bound:
+          graph.add_edge((i, j), (i, clean(j - self.grid_spacing)))
+        if j != top_bound:
+          graph.add_edge((i, j), (i, clean(j + self.grid_spacing)))
+    return graph
 
 class Controller:
   def __init__(self):
@@ -106,10 +139,12 @@ class Controller:
 
   def react_odom(self, odom):
     ''' callback function: react to odom info '''
-    odom.pose.pose.position.x
+    pass
+    # odom.pose.pose.position.x
 
   def react_scan(self, scan):
-    scan.ranges[]
+    pass
+    # scan.ranges[]
 
   def stop(self):
     ''' stop all bot motion '''
@@ -118,6 +153,9 @@ class Controller:
 
   def drive(self):
     self.pub.publish(self.command)
+
+def clean(num):
+  return float(round(num, 1))
 
 def tr_to_xy(pair):
   ''' convert a theta, radius pair to an x, y pair '''
@@ -134,8 +172,15 @@ def xy_to_tr(pair):
   return [theta, radius]
 
 
-controller = Controller()
+# controller = Controller()
 
-while not rospy.is_shutdown():
-  controller.update_command()
-  controller.drive()
+# while not rospy.is_shutdown():
+#   controller.update_command()
+#   controller.drive()
+
+graph = GraphGenerator((0,0),(1,2)).generate()
+graph.remove_point((0.1,0.3))
+graph.remove_point((0.1,0.1))
+graph.remove_point((0.1,0.2))
+graph.remove_point((0.1,0.4))
+print graph.navigate((0,0),(.5,.5))
