@@ -21,34 +21,43 @@ class Controller:
 
 	def read_scan(self,scan):
 		''' read the scan from 310-365, 0-45 '''
-		measure_left = scan.ranges[0:45]
-		measure_right = scan.ranges[310:365]
+		measure_left = scan.ranges[45:10:-1]
+		measure_right = scan.ranges[350:315:-1]
 
-		# variable = [[i, measure[i]] for i in range(len(measure)) if measure[i] > 0]
 
-		detect_left = [i for i in range(len(measure_left)) if (measure_left[i] > 0) & (measure_left[i] < 2)]
+		# for j,item in enumerate(measure_left):
+		# 	print type(measure_left)
+		# 	if item > 2:
+		# 		measure_left[j] = 0
 
-		detect_right = [i for i in range(len(measure_right)) if (measure_right[i] > 0) & (measure_right[i] < 2)]
+		# for k,item in enumerate(measure_right):
+		# 	print type(k)
+		# 	if item > 2:
+		# 		measure_right[k] = 0
 
-		detect = detect_left + detect_right
+		# filter_left = [0 for i in range(len(measure_left)) if measure_left[i] > 2]
+		# filter_right = [0 for i in range(len(measure_right)) if measure_right[i] > 2]
 
-		if len(detect) != 0:
-			self.forward(0.05)
+
+		detect_left = sum([i for i in measure_left if i>0 and i<1.5])
+		detect_right = sum([i for i in measure_right if i>0 and i<1.5])		
+		# detect_right = sum(i>0 for i in measure_right)
+
+		# print 'LEFT: ',detect_left
+		# print 'RIGHT: ',detect_right
+		
+		if (abs(detect_left - detect_right)) < 5:
+			print 'go fwd'
+			self.forward(0.1)
+		elif detect_left > detect_right:
+			print 'spin left'
+			self.spin_left(0.3)
+		elif detect_right > detect_left:
+			print 'spin right'
+			self.spin_right(0.3)
 		else:
+			print 'stop'
 			self.stop()
-
-		# avg = sum(detect)/len(detect)
-
-
-		# rotate until looking straight the obstacle
-
-		# if len(detect) == 0:
-		# 	pass
-		# 	# self.forward(0.05)
-		# elif avg > 0 & avg < 45:
-		# 	self.left()
-		# else:
-		# 	self.right()
 
 	def charge(self,scan):
 		''' if parallel to wall, go forward.  if not, rotate until parallel '''
@@ -56,41 +65,44 @@ class Controller:
 		if scan.ranges[105]==0 or scan.ranges[75]==0:
 			return
 
-		if (abs(scan.ranges[105] - scan.ranges[75]) < self.threshold):
+		if (abs(scan.ranges[105] - scan.ranges[75]) < self.threshold): 
+			# if the two values are close enough to each other, move forward
 			self.forward(0.05)
 		elif (scan.ranges[105] - scan.ranges[75]) > 0:
+			# if ranges[105] is greater, spin right
 			self.spin_right()
 		else:
+			# if ranges[75] is greater, spin left
 			self.spin_left()
 
 	### Manipulating bot
 
-	def forward(self, x):
+	def forward(self,speed):
 		''' drive bot forward '''
-		self.command.linear.x = x
+		self.command.linear.x = speed
 		self.command.linear.y = 0
 		self.command.linear.z = 0
 		self.command.angular.x = 0
 		self.command.angular.y = 0	
 		self.command.angular.z = 0	
 
-	def spin_left(self):
+	def spin_left(self,speed):
 		''' spin bot left '''
 		self.command.linear.x = 0
 		self.command.linear.y = 0
 		self.command.linear.z = 0
 		self.command.angular.x = 0
 		self.command.angular.y = 0	
-		self.command.angular.z = 0.3			
+		self.command.angular.z = speed			
 
-	def spin_right(self):
+	def spin_right(self,speed):
 		''' spin bot right '''
 		self.command.linear.x = 0
 		self.command.linear.y = 0
 		self.command.linear.z = 0
 		self.command.angular.x = 0
 		self.command.angular.y = 0	
-		self.command.angular.z = -0.3	
+		self.command.angular.z = -speed	
 
 	def stop(self):
 		''' stop all bot motion '''
