@@ -14,6 +14,7 @@ import heapq
 
 speed_factor = .6
 personal_space = .5
+grid_spacing = 0.1
 
 class PriorityQueue:
   ''' the closest point is arranged first '''
@@ -32,22 +33,87 @@ class PriorityQueue:
 
 class Graph:
   ''' creates path for bot to follow '''  
-  def __init__(self):
+  def __init__(self, grid_spacing, padding, blast_radius):
     self.edges = {}
+    self.grid_spacing = grid_spacing
+    self.padding = padding
+    self.blast_radius = blast_radius
+    self.left_bound = 0
+    self.right_bound = 0
+    self.bottom_bound = 0
+    self.top_bound = 0
+
+  def recalculate_bounds(self, pt):
+    (x, y) = pt
+    if x > self.right_bound:
+      self.right_bound = x
+    if x < self.left_bound:
+      self.left_bound = x
+    if y > self.top_bound:
+      self.top_bound = y
+    if y < self.bottom_bound:
+      self.bottom_bound = y
 
   def add_edge(self, pt1, pt2):
+    self.recalculate_bounds(pt1)
     if pt1 not in self.edges:
       self.edges[pt1] = [pt2]
     else:
-      self.edges[pt1].append(pt2)
+      if pt2 not in self.edges[pt1]:
+        self.edges[pt1].append(pt2)
 
-  def remove_point(self, pt1):
+  def remove_point(self, pt1, depth):
     if pt1 in self.edges:
+      if depth > 1:
+        while self.edges[pt1]:
+          pt2 = self.edges[pt1].pop()
+          self.remove_point(pt2, depth - 1)
       for pt2 in self.edges[pt1]:
-        self.edges[pt2].remove(pt1)
+        if pt1 in self.edges[pt2]:
+          self.edges[pt2].remove(pt1)
       self.edges.pop(pt1)
 
+  def grow_grid(self, pt):
+    (x ,y) = pt
+    left_bound = clean(x - self.blast_radius - self.padding)
+    right_bound = clean(x + self.blast_radius + self.padding)
+    bottom_bound = clean(y - self.blast_radius - self.padding)
+    top_bound = clean(y + self.blast_radius + self.padding)
+    for i in np.arange(left_bound, right_bound, self.grid_spacing):
+      i = clean(i)
+      for j in np.arange(bottom_bound, top_bound, self.grid_spacing):
+        j = clean(j)
+        if i != left_bound:
+          self.add_edge((i, j), (clean(i - self.grid_spacing), j))
+        if i != right_bound:
+          self.add_edge((i, j), (clean(i + self.grid_spacing), j))
+        if j != bottom_bound:
+          self.add_edge((i, j), (i, clean(j - self.grid_spacing)))
+        if j != top_bound:
+          self.add_edge((i, j), (i, clean(j + self.grid_spacing)))
+
+  def add_obstacle(self, pt):
+    self.grow_grid(pt)
+    impact_crater = (self.blast_radius / self.grid_spacing) + 1
+    self.remove_point(pt, impact_crater)
+
+  def is_active_node(self, pt):
+    return pt in self.edges
+
+  def round_to_node(self, pt):
+    (x, y) = pt
+    return (self.round_to_node_one_d(x), self.round_to_node_one_d(y))
+
+  def round_to_node_one_d(self, x):
+    xmod = x % self.grid_spacing
+    if xmod < (0.5 * self.grid_spacing):
+      new_x = x - xmod
+    else:
+      new_x = x - xmod + self.grid_spacing
+    return clean(new_x)
+
   def neighbors(self, pt):
+    pt = (clean(pt[0]), clean(pt[1]))
     return self.edges[pt]
 
   def cost(self, pt1, pt2):
@@ -83,7 +149,8 @@ class Graph:
         if next not in cost_so_far or new_cost < cost_so_far[next]:
           cost_so_far[next] = new_cost
           priority = new_cost + self.heuristic(goal, next)
-          frontier.put(next, priority)
+          if next in self.edges:
+            frontier.put(next, priority)
           came_from[next] = current
     return came_from, cost_so_far
 
@@ -95,6 +162,21 @@ class Graph:
         path.append(current)
     path.reverse()
     return path
+
+  def print_graph(self):
+    strings = []
+    horiz_size = int((self.right_bound - self.left_bound) / self.grid_spacing + 1)
+    vert_size = int((self.top_bound - self.bottom_bound) / self.grid_spacing + 1)
+    for j in range(vert_size):
+      strings.append('  ' * horiz_size)
+    for pt in self.edges.keys():
+      (x, y) = pt
+      row = int((y - self.bottom_bound)/(self.top_bound - self.bottom_bound) * vert_size) -1
+      col = int((x - self.left_bound)/(self.right_bound - self.left_bound) * horiz_size)*2 -1
+      strings[row] = strings[row][0:col] + '. ' + strings[row][col + 2:]
+    for string in strings:
+      print string
+
 
 
 class GraphGenerator:
@@ -115,11 +197,11 @@ class GraphGenerator:
     return [left_bound, right_bound, bottom_bound, top_bound]
 
   def generate(self):
-    graph = Graph()
+    graph = Graph(self.grid_spacing, self.padding, 0.1)
     [left_bound, right_bound, bottom_bound, top_bound] = self.calculate_bounds()
-    for i in np.arange(left_bound, right_bound, self.grid_spacing):
+    for i in np.arange(left_bound, right_bound + self.grid_spacing, self.grid_spacing):
       i = clean(i)
-      for j in np.arange(bottom_bound, top_bound, self.grid_spacing):
+      for j in np.arange(bottom_bound, top_bound + self.grid_spacing, self.grid_spacing):
         j = clean(j)
         if i != left_bound:
           graph.add_edge((i, j), (clean(i - self.grid_spacing), j))
@@ -131,30 +213,31 @@ class GraphGenerator:
           graph.add_edge((i, j), (i, clean(j + self.grid_spacing)))
     return graph
 
-
 class Controller:
   def __init__(self):
     rospy.init_node('person_follow')
     rospy.Subscriber('/odom', Odometry, self.hit_waypoint, queue_size=1)
-    rospy.Subscriber('/scan', LaserScan, self.evaluate_tracking_box, queue_size=1) # UNCOMMENT
+    rospy.Subscriber('/scan', LaserScan, self.react_scan, queue_size=1)
     self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
     self.command = Twist()
     self.target = [0, 1]
-    self.threshold = 0.1
+    self.threshold = 0.02
     self.stop()
     self.drive()
+    self.graph = GraphGenerator((0,0),(10, 0)).generate()
+    self.path = []
+    self.bot_x = 0
+    self.bot_y = 0
 
-  def recalculate(self,odom,waypoint):
+  def recalculate(self,waypoint):
     ''' define waypoint in relation to base_link. return angle and distance. '''
 
-    bot_x = odom.pose.pose.position.x
-    bot_y = odom.pose.pose.position.y
     waypoint_x = waypoint[0]
     waypoint_y = waypoint[1]
 
-    next_distance = math.sqrt((waypoint_x-bot_x)**2 + (waypoint_y-bot_y)**2)
+    next_distance = math.sqrt((waypoint_x-self.bot_x)**2 + (waypoint_y-self.bot_y)**2)
 
-    next_angle = math.atan( (waypoint_x-bot_x)/(waypoint_y-bot_y) ) # returns in RADIANS
+    next_angle = math.atan( (waypoint_x-self.bot_x)/(waypoint_y-self.bot_y) ) # returns in RADIANS
 
     return next_distance, next_angle # angle in RADIANS     
 
@@ -162,40 +245,45 @@ class Controller:
   # def hit_waypoint(odom,path,distance,angle): # UNCOMMENT
   def hit_waypoint(self,odom):
     ''' go towards given waypoint '''
-    bot_x = odom.pose.pose.position.x
-    bot_y = odom.pose.pose.position.y
+    self.bot_x = odom.pose.pose.position.x
+    self.bot_y = odom.pose.pose.position.y
     bot_heading = convert_pose_to_xy_and_theta(odom)
 
-    path = [(1,1),(2,2),(3,3)] # HARDCODED
+    path = self.path[1:]
+    waypoint = path[0]
+    print 'current location ', (self.bot_x,self.bot_y)
+    print 'going to waypoint ', waypoint
 
-    for i in range(0,len(path)):
+    waypoint_x = waypoint[0]
+    waypoint_y = waypoint[1]
 
-      print 'going to waypoint ', path[i]
+    [next_distance, next_angle] = self.recalculate(waypoint) # angle in RADIANS
+    print bot_heading, next_angle
+    if (bot_heading-next_angle < 0.05):
+      self.spin_right()
+    elif (bot_heading-next_angle > 0.05):
+      self.spin_left()
+    else:
+      self.forward(0.05)
 
-      waypoint_x = path[i][0]
-      waypoint_y = path[i][1]
-
-      [next_distance, next_angle] = self.recalculate(odom,path[i]) # angle in RADIANS
-
-      if (waypoint_x > bot_x) & (abs(bot_heading-next_angle) > self.threshold):
-        self.spin_left()
-      elif (bot_x > waypoint_x) & (abs(bot_heading-next_angle) > self.threshold):
-        self.spin_right()
-      else:
-        self.forward(0.05)
-
-      if (abs(bot_x-waypoint_x) > self.threshold) & (abs(bot_y-waypoint_y) > self.threshold):
-        pass
-      else:
-        self.stop()
-        print 'HIT waypoint', path[i]
+    if not (abs(self.bot_x-waypoint_x) > self.threshold) or not (abs(self.bot_y-waypoint_y) > self.threshold):
+      print(abs(self.bot_x-waypoint_x) > self.threshold)
+      self.stop()
+      print "current location", self.bot_x, self.bot_y
+      print 'HIT waypoint', waypoint
 
 
   def react_scan(self, scan):
     xy_points = []
     for t in range(len(scan.ranges)):
-      if t > 0:
+      if scan.ranges[t] > 0:
         xy_points.append(tr_to_xy((t, scan.ranges[t])))
+    for pt in xy_points:
+      rounded_pt = self.graph.round_to_node(pt)
+      if self.graph.is_active_node(rounded_pt):
+        self.graph.add_obstacle(rounded_pt)
+    self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    #self.graph.print_graph()
 
   def stop(self):
     ''' stop all bot motion '''
@@ -209,7 +297,7 @@ class Controller:
     self.command.linear.z = 0
     self.command.angular.x = 0
     self.command.angular.y = 0  
-    self.command.angular.z = 0.3      
+    self.command.angular.z = 0.1
 
   def spin_right(self):
     ''' spin bot right '''
@@ -218,7 +306,7 @@ class Controller:
     self.command.linear.z = 0
     self.command.angular.x = 0
     self.command.angular.y = 0  
-    self.command.angular.z = -0.3
+    self.command.angular.z = -0.1
 
   def forward(self, x):
     ''' drive bot forward '''
@@ -231,7 +319,6 @@ class Controller:
 
   def drive(self):
     self.pub.publish(self.command)
-
 
 ### GLOBAL METHODS
 
@@ -263,12 +350,4 @@ def convert_pose_to_xy_and_theta(odom):
 controller = Controller()
 
 while not rospy.is_shutdown():
-  # controller.update_command()
   controller.drive()
-
-# graph = GraphGenerator((0,0),(1,2)).generate()
-# graph.remove_point((0.1,0.3))
-# graph.remove_point((0.1,0.1))
-# graph.remove_point((0.1,0.2))
-# graph.remove_point((0.1,0.4))
-# print graph.navigate((0,0),(.5,.5))
