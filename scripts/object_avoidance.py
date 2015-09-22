@@ -11,7 +11,6 @@ import math
 import numpy as np
 import heapq
 
-
 speed_factor = .6
 personal_space = .5
 grid_spacing = 0.1
@@ -178,7 +177,6 @@ class Graph:
       print string
 
 
-
 class GraphGenerator:
   ''' generate the network of nodes, called by Controller '''
   def __init__(self, start, goal):
@@ -225,7 +223,7 @@ class Controller:
     self.stop()
     self.drive()
     self.graph = GraphGenerator((0,0),(10, 0)).generate()
-    self.path = []
+    self.path = [(0,0)]
     self.bot_x = 0
     self.bot_y = 0
 
@@ -237,40 +235,83 @@ class Controller:
 
     next_distance = math.sqrt((waypoint_x-self.bot_x)**2 + (waypoint_y-self.bot_y)**2)
 
-    next_angle = math.atan( (waypoint_x-self.bot_x)/(waypoint_y-self.bot_y) ) # returns in RADIANS
+    # next_angle = math.atan( (waypoint_x-self.bot_x)/(waypoint_y-self.bot_y) ) # RADIANS
 
-    return next_distance, next_angle # angle in RADIANS     
+    next_angle = math.degrees(math.atan((waypoint_x-self.bot_x)/(waypoint_y-self.bot_y))) # DEGREES
+
+    if next_angle < 0:
+      next_angle = next_angle + 360
+    else:
+      next_angle = next_angle
+
+    return next_distance, next_angle   
 
 
   # def hit_waypoint(odom,path,distance,angle): # UNCOMMENT
   def hit_waypoint(self,odom):
     ''' go towards given waypoint '''
+
+    ### GET BOT LOCATION
     self.bot_x = odom.pose.pose.position.x
-    self.bot_y = odom.pose.pose.position.y
+
+    # eliminates dividing by zero error
+    if odom.pose.pose.position.x == 0:
+      self.bot_y = odom.pose.pose.position.y + 0.001
+    else:
+      self.bot_y = odom.pose.pose.position.y
+
+self.path
+    ### GET CURRENT BOT HEADING
     bot_heading = convert_pose_to_xy_and_theta(odom)
 
+
+    ### GET WAYPOINT. need to loop through the path
     path = self.path[1:]
     waypoint = path[0]
-    print 'current location ', (self.bot_x,self.bot_y)
-    print 'going to waypoint ', waypoint
-
     waypoint_x = waypoint[0]
     waypoint_y = waypoint[1]
 
-    [next_distance, next_angle] = self.recalculate(waypoint) # angle in RADIANS
-    print bot_heading, next_angle
-    if (bot_heading-next_angle < 0.05):
-      self.spin_right()
-    elif (bot_heading-next_angle > 0.05):
+    # UNCOMMENT
+    # print 'current location ', (self.bot_x,self.bot_y)
+    # print 'going to waypoint ', waypoint
+
+
+    ### CALCULATE WHERE TO GO
+    [next_distance, next_angle] = self.recalculate(waypoint)
+
+    # UNCOMMENT
+    # print 'bot heading: ',bot_heading, 'next angle',next_angle
+    # print ' '
+
+    # if (bot_heading-next_angle < 0.05):
+    #   selfpath.spin_right()
+    # elif (bot_heading-next_angle > 0.05):
+    #   self.spin_left()
+    # else:
+    #   self.forward(0.05)
+
+
+    ### NAVIGATE BOT
+    # if bot_heading != angle to wpoint, continue spinning
+    if (abs(bot_heading-next_angle) > 5):
       self.spin_left()
     else:
       self.forward(0.05)
 
-    if not (abs(self.bot_x-waypoint_x) > self.threshold) or not (abs(self.bot_y-waypoint_y) > self.threshold):
-      print(abs(self.bot_x-waypoint_x) > self.threshold)
+    # if bot_location = waypoint, stop
+    if (abs(self.bot_x-waypoint_x) < self.threshold) and (abs(self.bot_y-waypoint_y) < self.threshold):
       self.stop()
       print "current location", self.bot_x, self.bot_y
       print 'HIT waypoint', waypoint
+      print ' '
+
+
+    # if not (abs(self.bot_x-waypoint_x) > self.threshold) or not (abs(self.bot_y-waypoint_y) > self.threshold):
+    #   # print(abs(self.bot_x-waypoint_x) > self.threshold)
+    #   self.stop()
+    #   print "current location", self.bot_x, self.bot_y
+    #   print 'HIT waypoint', waypoint
+    #   print ' '
 
 
   def react_scan(self, scan):
@@ -282,7 +323,8 @@ class Controller:
       rounded_pt = self.graph.round_to_node(pt)
       if self.graph.is_active_node(rounded_pt):
         self.graph.add_obstacle(rounded_pt)
-    self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    # self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0)) # UNCOMMENT
+    self.path = [(1,1),(1,2),(2,1)]
     #self.graph.print_graph()
 
   def stop(self):
@@ -297,7 +339,7 @@ class Controller:
     self.command.linear.z = 0
     self.command.angular.x = 0
     self.command.angular.y = 0  
-    self.command.angular.z = 0.1
+    self.command.angular.z = 0.3
 
   def spin_right(self):
     ''' spin bot right '''
@@ -306,7 +348,7 @@ class Controller:
     self.command.linear.z = 0
     self.command.angular.x = 0
     self.command.angular.y = 0  
-    self.command.angular.z = -0.1
+    self.command.angular.z = -0.3
 
   def forward(self, x):
     ''' drive bot forward '''
@@ -328,14 +370,25 @@ def clean(num):
 def tr_to_xy(pair):
   ''' convert a theta, radius pair to an x, y pair '''
   angle, radius = pair[0], pair[1]
-  x = radius * math.cos(math.radians(angle))
-  y = radius * math.sin(math.radians(angle))
+  # RADIANS
+  # x = radius * math.cos(math.radians(angle))
+  # y = radius * math.sin(math.radians(angle))
+
+  # DEGREES
+  x = radius * math.degrees(math.cos(math.radians(angle)))
+  y = radius * math.degrees(math.sin(math.radians(angle)))
+
   return [x,y]
 
 def xy_to_tr(pair):
   ''' convert an x, y pair to a theta, radius pair '''
   x, y = pair[0], pair[1]
+
+  # theta = math.atan((y / x))  # RADIANS
+
+  # DEGREES
   theta = math.degrees(math.atan((y / x)))
+
   radius = math.sqrt(x ** 2 + y ** 2)
   return [theta, radius]
 
@@ -344,7 +397,16 @@ def convert_pose_to_xy_and_theta(odom):
     orientation_tuple = (odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w)
     angles = euler_from_quaternion(orientation_tuple)
     # return pose.position.x, pose.position.y, angles[2]
-    return angles[2]
+    # return angles[2] # RADIANS
+    yaw = math.degrees(angles[2])
+
+    # keep yaw positive and non-dependent upon spin direction
+    if yaw < 0:
+      yaw = yaw + 360
+    else:
+      yaw = yaw
+
+    return yaw
 
 
 controller = Controller()
