@@ -143,8 +143,10 @@ class Controller:
     # odom.pose.pose.position.x
 
   def react_scan(self, scan):
-    pass
-    # scan.ranges[]
+    xy_points = []
+    for t in range(len(scan.ranges)):
+      if t > 0:
+        xy_points.append(tr_to_xy((t, scan.ranges[t])))
 
   def stop(self):
     ''' stop all bot motion '''
