@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
-""" Have bot follow a walking person like a pet. """
+""" Bot traverses from Point A to Point B, avoiding obstacles along the way. """
 
 import rospy
-from geometry_msgs.msg import Twist, PoseWithCovariance, Pose, Point
+from geometry_msgs.msg import Twist, PoseWithCovariance, Pose, Point, Quaternion
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
+from tf.transformations import euler_from_quaternion
 import math
 import numpy as np
 import heapq
+
 
 speed_factor = .6
 personal_space = .5
@@ -110,6 +113,7 @@ class Graph:
     return clean(new_x)
 
   def neighbors(self, pt):
+    pt = (clean(pt[0]), clean(pt[1]))
     return self.edges[pt]
 
   def cost(self, pt1, pt2):
@@ -145,7 +149,8 @@ class Graph:
         if next not in cost_so_far or new_cost < cost_so_far[next]:
           cost_so_far[next] = new_cost
           priority = new_cost + self.heuristic(goal, next)
-          frontier.put(next, priority)
+          if next in self.edges:
+            frontier.put(next, priority)
           came_from[next] = current
     return came_from, cost_so_far
 
@@ -166,8 +171,8 @@ class Graph:
       strings.append('  ' * horiz_size)
     for pt in self.edges.keys():
       (x, y) = pt
-      row = int((y - self.bottom_bound) * vert_size)
-      col = int((x - self.left_bound) * horiz_size)*2
+      row = int((y - self.bottom_bound)/(self.top_bound - self.bottom_bound) * vert_size) -1
+      col = int((x - self.left_bound)/(self.right_bound - self.left_bound) * horiz_size)*2 -1
       strings[row] = strings[row][0:col] + '. ' + strings[row][col + 2:]
     for string in strings:
       print string
@@ -208,69 +213,65 @@ class GraphGenerator:
           graph.add_edge((i, j), (i, clean(j + self.grid_spacing)))
     return graph
 
-class Follow_path:
-  ''' control bot to follow path returned by class Graph
-  assume class Graph returns list of tuples.
-  path = [(x1,y1),(x2,y2),(x3,y3)] '''
-
-  def __init__(self):
-    pass
-
-  def recalculate(odom,path):
-    ''' define waypoint in relation to base_link. return angle and distance. '''
-
-    # qty = len(path) # this is the number of waypoints to hit
-
-    next_waypoint = path[0]
-
-    next_distance = math.sqrt((next_waypoint[0]-base_link[0])**2 + (next_waypoint[1]-base_link[1])**2)
-
-    next_angle = math.atan( (next_waypoint[1]-base_link[1])/(next_waypoint[0]-base_link[0]) ) # returns in RADIANS
-
-    # update list
-    new_path = path[1:len(path)]
-
-    # print next_distance, next_angle, new_path      
-
-  def hit_waypoint(odom,path,distance,angle):
-    ''' go towards waypoint given '''
-
-    threshold = 0.1
-
-    # assume odom_heading is in RADIANS
-    # also, assuming we can /get/ odom_heading
-
-    if (waypoint_x > bot_x) & (abs(odom_heading-angle) > threshold):
-      self.spin_left()
-    elif (bot_x > waypoint_x) & (abs(odom_heading-angle) > threshold):
-      self.spin_right()
-    else:
-      self.forward()
-
-    if (abs(base_link[0]-waypoint[0]) > threshold) & (abs(base_link[1]-waypoint[1]) > threshold):
-      pass
-    else:
-      self.stop()
-
-
 class Controller:
   def __init__(self):
     rospy.init_node('person_follow')
-    rospy.Subscriber('/odom', Odometry, self.react_odom, queue_size=1)
-    rospy.Subscriber('/scan', LaserScan,
-      self.evaluate_tracking_box, queue_size=1)
+    rospy.Subscriber('/odom', Odometry, self.hit_waypoint, queue_size=1)
+    rospy.Subscriber('/scan', LaserScan, self.react_scan, queue_size=1)
     self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
     self.command = Twist()
     self.target = [0, 1]
-    # self.threshold = 0.05
-    # self.target_distance = rospy.get_param('~target_distance') # user-input distance from wall
+    self.threshold = 0.02
     self.stop()
     self.drive()
+    self.graph = GraphGenerator((0,0),(10, 0)).generate()
+    self.path = []
+    self.bot_x = 0
+    self.bot_y = 0
 
-  def react_odom(self, odom):
-    ''' callback function: react to odom info '''
-    pass
-    # odom.pose.pose.position.x
+  def recalculate(self,waypoint):
+    ''' define waypoint in relation to base_link. return angle and distance. '''
+
+    waypoint_x = waypoint[0]
+    waypoint_y = waypoint[1]
+
+    next_distance = math.sqrt((waypoint_x-self.bot_x)**2 + (waypoint_y-self.bot_y)**2)
+
+    next_angle = math.atan( (waypoint_x-self.bot_x)/(waypoint_y-self.bot_y) ) # returns in RADIANS
+
+    return next_distance, next_angle # angle in RADIANS     
+
+
+  # def hit_waypoint(odom,path,distance,angle): # UNCOMMENT
+  def hit_waypoint(self,odom):
+    ''' go towards given waypoint '''
+    self.bot_x = odom.pose.pose.position.x
+    self.bot_y = odom.pose.pose.position.y
+    bot_heading = convert_pose_to_xy_and_theta(odom)
+
+    path = self.path[1:]
+    waypoint = path[0]
+    print 'current location ', (self.bot_x,self.bot_y)
+    print 'going to waypoint ', waypoint
+
+    waypoint_x = waypoint[0]
+    waypoint_y = waypoint[1]
+
+    [next_distance, next_angle] = self.recalculate(waypoint) # angle in RADIANS
+    print bot_heading, next_angle
+    if (bot_heading-next_angle < 0.05):
+      self.spin_right()
+    elif (bot_heading-next_angle > 0.05):
+      self.spin_left()
+    else:
+      self.forward(0.05)
+
+    if not (abs(self.bot_x-waypoint_x) > self.threshold) or not (abs(self.bot_y-waypoint_y) > self.threshold):
+      print(abs(self.bot_x-waypoint_x) > self.threshold)
+      self.stop()
+      print "current location", self.bot_x, self.bot_y
+      print 'HIT waypoint', waypoint
+
 
   def react_scan(self, scan):
     xy_points = []
@@ -278,14 +279,43 @@ class Controller:
       if scan.ranges[t] > 0:
         xy_points.append(tr_to_xy((t, scan.ranges[t])))
     for pt in xy_points:
-      rounded_pt = graph.round_to_node(pt)
-      if self.graph.is_active_node(pt):
-        self.graph.add_obstacle(pt)
+      rounded_pt = self.graph.round_to_node(pt)
+      if self.graph.is_active_node(rounded_pt):
+        self.graph.add_obstacle(rounded_pt)
+    self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    #self.graph.print_graph()
 
   def stop(self):
     ''' stop all bot motion '''
     self.command.linear.x = 0
     self.pub.publish(self.command)
+
+  def spin_left(self):
+    ''' spin bot left '''
+    self.command.linear.x = 0
+    self.command.linear.y = 0
+    self.command.linear.z = 0
+    self.command.angular.x = 0
+    self.command.angular.y = 0  
+    self.command.angular.z = 0.1
+
+  def spin_right(self):
+    ''' spin bot right '''
+    self.command.linear.x = 0
+    self.command.linear.y = 0
+    self.command.linear.z = 0
+    self.command.angular.x = 0
+    self.command.angular.y = 0  
+    self.command.angular.z = -0.1
+
+  def forward(self, x):
+    ''' drive bot forward '''
+    self.command.linear.x = x
+    self.command.linear.y = 0
+    self.command.linear.z = 0
+    self.command.angular.x = 0
+    self.command.angular.y = 0  
+    self.command.angular.z = 0
 
   def drive(self):
     self.pub.publish(self.command)
@@ -309,16 +339,15 @@ def xy_to_tr(pair):
   radius = math.sqrt(x ** 2 + y ** 2)
   return [theta, radius]
 
+def convert_pose_to_xy_and_theta(odom):
+    """ Convert pose (geometry_msgs.Pose) to a (x,y,yaw) tuple """
+    orientation_tuple = (odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w)
+    angles = euler_from_quaternion(orientation_tuple)
+    # return pose.position.x, pose.position.y, angles[2]
+    return angles[2]
 
-# controller = Controller()
 
-# while not rospy.is_shutdown():
-#   controller.update_command()
-#   controller.drive()
+controller = Controller()
 
-graph = GraphGenerator((0,0),(0.5,0.5)).generate()
-graph.print_graph()
-print("---------------")
-graph.add_obstacle((0.2,0.2))
-graph.print_graph()
-
+while not rospy.is_shutdown():
+  controller.drive()
