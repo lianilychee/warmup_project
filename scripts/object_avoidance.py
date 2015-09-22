@@ -11,6 +11,7 @@ import heapq
 
 speed_factor = .6
 personal_space = .5
+grid_spacing = 0.1
 
 class PriorityQueue:
   ''' the closest point is arranged first '''
@@ -29,20 +30,84 @@ class PriorityQueue:
 
 class Graph:
   ''' creates path for bot to follow '''  
-  def __init__(self):
+  def __init__(self, grid_spacing, padding, blast_radius):
     self.edges = {}
+    self.grid_spacing = grid_spacing
+    self.padding = padding
+    self.blast_radius = blast_radius
+    self.left_bound = 0
+    self.right_bound = 0
+    self.bottom_bound = 0
+    self.top_bound = 0
+
+  def recalculate_bounds(self, pt):
+    (x, y) = pt
+    if x > self.right_bound:
+      self.right_bound = x
+    if x < self.left_bound:
+      self.left_bound = x
+    if y > self.top_bound:
+      self.top_bound = y
+    if y < self.bottom_bound:
+      self.bottom_bound = y
 
   def add_edge(self, pt1, pt2):
+    self.recalculate_bounds(pt1)
     if pt1 not in self.edges:
       self.edges[pt1] = [pt2]
     else:
-      self.edges[pt1].append(pt2)
+      if pt2 not in self.edges[pt1]:
+        self.edges[pt1].append(pt2)
 
-  def remove_point(self, pt1):
+  def remove_point(self, pt1, depth):
     if pt1 in self.edges:
+      if depth > 1:
+        while self.edges[pt1]:
+          pt2 = self.edges[pt1].pop()
+          self.remove_point(pt2, depth - 1)
       for pt2 in self.edges[pt1]:
-        self.edges[pt2].remove(pt1)
+        if pt1 in self.edges[pt2]:
+          self.edges[pt2].remove(pt1)
       self.edges.pop(pt1)
+
+  def grow_grid(self, pt):
+    (x ,y) = pt
+    left_bound = clean(x - self.blast_radius - self.padding)
+    right_bound = clean(x + self.blast_radius + self.padding)
+    bottom_bound = clean(y - self.blast_radius - self.padding)
+    top_bound = clean(y + self.blast_radius + self.padding)
+    for i in np.arange(left_bound, right_bound, self.grid_spacing):
+      i = clean(i)
+      for j in np.arange(bottom_bound, top_bound, self.grid_spacing):
+        j = clean(j)
+        if i != left_bound:
+          self.add_edge((i, j), (clean(i - self.grid_spacing), j))
+        if i != right_bound:
+          self.add_edge((i, j), (clean(i + self.grid_spacing), j))
+        if j != bottom_bound:
+          self.add_edge((i, j), (i, clean(j - self.grid_spacing)))
+        if j != top_bound:
+          self.add_edge((i, j), (i, clean(j + self.grid_spacing)))
+
+  def add_obstacle(self, pt):
+    self.grow_grid(pt)
+    impact_crater = (self.blast_radius / self.grid_spacing) + 1
+    self.remove_point(pt, impact_crater)
+
+  def is_active_node(self, pt):
+    return pt in self.edges
+
+  def round_to_node(self, pt):
+    (x, y) = pt
+    return (self.round_to_node_one_d(x), self.round_to_node_one_d(y))
+
+  def round_to_node_one_d(self, x):
+    xmod = x % self.grid_spacing
+    if xmod < (0.5 * self.grid_spacing):
+      new_x = x - xmod
+    else:
+      new_x = x - xmod + self.grid_spacing
+    return clean(new_x)
 
   def neighbors(self, pt):
     return self.edges[pt]
@@ -93,6 +158,21 @@ class Graph:
     path.reverse()
     return path
 
+  def print_graph(self):
+    strings = []
+    horiz_size = int((self.right_bound - self.left_bound) / self.grid_spacing + 1)
+    vert_size = int((self.top_bound - self.bottom_bound) / self.grid_spacing + 1)
+    for j in range(vert_size):
+      strings.append('  ' * horiz_size)
+    for pt in self.edges.keys():
+      (x, y) = pt
+      row = int((y - self.bottom_bound) * vert_size)
+      col = int((x - self.left_bound) * horiz_size)*2
+      strings[row] = strings[row][0:col] + '. ' + strings[row][col + 2:]
+    for string in strings:
+      print string
+
+
 
 class GraphGenerator:
   ''' generate the network of nodes, called by Controller '''
@@ -112,11 +192,11 @@ class GraphGenerator:
     return [left_bound, right_bound, bottom_bound, top_bound]
 
   def generate(self):
-    graph = Graph()
+    graph = Graph(self.grid_spacing, self.padding, 0.1)
     [left_bound, right_bound, bottom_bound, top_bound] = self.calculate_bounds()
-    for i in np.arange(left_bound, right_bound, self.grid_spacing):
+    for i in np.arange(left_bound, right_bound + self.grid_spacing, self.grid_spacing):
       i = clean(i)
-      for j in np.arange(bottom_bound, top_bound, self.grid_spacing):
+      for j in np.arange(bottom_bound, top_bound + self.grid_spacing, self.grid_spacing):
         j = clean(j)
         if i != left_bound:
           graph.add_edge((i, j), (clean(i - self.grid_spacing), j))
@@ -129,27 +209,28 @@ class GraphGenerator:
     return graph
 
 class Follow_path:
-    ''' control bot to follow path returned by class Graph
-    assume class Graph returns list of tuples.
-    path = [(x1,y1),(x2,y2),(x3,y3)] '''
+  ''' control bot to follow path returned by class Graph
+  assume class Graph returns list of tuples.
+  path = [(x1,y1),(x2,y2),(x3,y3)] '''
 
-    def __init__(self):
+  def __init__(self):
+    pass
 
-    def recalculate(odom,path):
-      ''' define waypoint in relation to base_link. return angle and distance. '''
+  def recalculate(odom,path):
+    ''' define waypoint in relation to base_link. return angle and distance. '''
 
-      # qty = len(path) # this is the number of waypoints to hit
+    # qty = len(path) # this is the number of waypoints to hit
 
-      next_waypoint = path[0]
+    next_waypoint = path[0]
 
-      next_distance = math.sqrt((next_waypoint[0]-base_link[0])**2 + (next_waypoint[1]-base_link[1])**2)
+    next_distance = math.sqrt((next_waypoint[0]-base_link[0])**2 + (next_waypoint[1]-base_link[1])**2)
 
-      next_angle = math.atan( (next_waypoint[1]-base_link[1])/(next_waypoint[0]-base_link[0]) ) # returns in RADIANS
+    next_angle = math.atan( (next_waypoint[1]-base_link[1])/(next_waypoint[0]-base_link[0]) ) # returns in RADIANS
 
-      # update list
-      new_path = path[1:len(path)]
+    # update list
+    new_path = path[1:len(path)]
 
-      # print next_distance, next_angle, new_path      
+    # print next_distance, next_angle, new_path      
 
   def hit_waypoint(odom,path,distance,angle):
     ''' go towards waypoint given '''
@@ -194,8 +275,12 @@ class Controller:
   def react_scan(self, scan):
     xy_points = []
     for t in range(len(scan.ranges)):
-      if t > 0:
+      if scan.ranges[t] > 0:
         xy_points.append(tr_to_xy((t, scan.ranges[t])))
+    for pt in xy_points:
+      rounded_pt = graph.round_to_node(pt)
+      if self.graph.is_active_node(pt):
+        self.graph.add_obstacle(pt)
 
   def stop(self):
     ''' stop all bot motion '''
@@ -205,11 +290,10 @@ class Controller:
   def drive(self):
     self.pub.publish(self.command)
 
+### GLOBAL METHODS
+
 def clean(num):
   return float(round(num, 1))
-
-
-### GLOBAL METHODS
 
 def tr_to_xy(pair):
   ''' convert a theta, radius pair to an x, y pair '''
@@ -232,9 +316,9 @@ def xy_to_tr(pair):
 #   controller.update_command()
 #   controller.drive()
 
-graph = GraphGenerator((0,0),(1,2)).generate()
-graph.remove_point((0.1,0.3))
-graph.remove_point((0.1,0.1))
-graph.remove_point((0.1,0.2))
-graph.remove_point((0.1,0.4))
-print graph.navigate((0,0),(.5,.5))
+graph = GraphGenerator((0,0),(0.5,0.5)).generate()
+graph.print_graph()
+print("---------------")
+graph.add_obstacle((0.2,0.2))
+graph.print_graph()
+
