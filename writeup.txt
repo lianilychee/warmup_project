@@ -17,13 +17,13 @@ PERSON-FOLLOWING:  We implemented independently of each other.  Liani divided th
 
 Ian used the clustering capabilities of scikit learn.  Any object scanned is abstracted to a cluster.  The clusters that are closest together are treated as feet/legs.  The bot will aim for the midpoint of the legs, then approach using proportional control.
 
-OBSTACLE AVOIDANCE:  We used the pathfinding algorithm A*.
+OBSTACLE AVOIDANCE:  To traverse a field full of obstacles, we set the bot's default motion to "forward."  When it detects an obstacle, it performs a side-stepping maneuver.  "Sidestepping" consists of rotating 90 degrees, moves forward a tad, turns (the opposite) 90 degrees, and continues on its merry way.
 
 
 ---
 For the finite state controller, what were the states?  What did the robot do in each state?  How did you combine and how did you detect when to transition between behaviors?
 
-
+Our states consisted of detect obstacle and manuever obstacle.  
 
 
 ---
@@ -35,7 +35,7 @@ In an object-oriented fashion?  Not quite sure how else to answer.
 ---
 What, if any, challenges did you face along the way?
 
-OBSTACLE AVOIDANCE:  Navigating to waypoints proved challenging because of negative values.
+OBSTACLE AVOIDANCE:  A* - so much sadness.  Generating accurate nodes proved challenging.
 
 
 ---
@@ -45,8 +45,10 @@ WALL-FOLLOWING: Incorporate user input (ex: stay 1m away from wall).  This means
 
 PERSON-FOLLOWING:  Liani - My ankles weren't being detected, perhaps because they were too skinny.  As a result, my person-following is a tad jerky, though it works just fine when I use a binder in place of my feet.  I also wonder how one could incorporate video?  Matrix comparison seems like it would put quite a load on the system, though, especially if comparison is being done on the entire image (rather than just a particular part of an image.)
 
-OBSTACLE AVOIDANCE:
+OBSTACLE AVOIDANCE:  We would have liked to have used A*, rather than brute-force obstacle avoidance.
 
 
 ---
 Did you learn any interesting lessons for future robotic programming projects?
+
+
