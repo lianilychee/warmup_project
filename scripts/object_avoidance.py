@@ -164,8 +164,8 @@ class Graph:
     strings = []
     horiz_size = int((self.right_bound - self.left_bound) / self.grid_spacing + 1)
     vert_size = int((self.top_bound - self.bottom_bound) / self.grid_spacing + 1)
-    print horiz_size
-    print vert_size
+    # print horiz_size
+    # print vert_size
     for j in range(vert_size):
       strings.append('.' * horiz_size)
     for pt in self.edges.keys():
@@ -174,10 +174,12 @@ class Graph:
       col = int((x - self.left_bound)/(self.right_bound - self.left_bound) * horiz_size) -1
       strings[row] = strings[row][0:col] + 'X' + strings[row][col + 1:]
       if len(strings[row]) > horiz_size:
-        print (len(strings[row]), horiz_size)
-        print (row, col)
+        # print (len(strings[row]), horiz_size)
+        # print (row, col)
+        pass # DELETE
     for string in strings:
-      print string + 'N'
+      # print string + 'N'
+      pass # DELETE
 
 
 class GraphGenerator:
@@ -229,7 +231,8 @@ class Controller:
     self.bot_x = 0
     self.bot_y = 0
     self.graph = GraphGenerator((0,0),self.goal).generate()
-    self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    # self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    self.path = [(0,0), (1,1), (1,0), (0,0)]
     self.path_index = 0
     self.path_changed = False
     self.heading_threshold = 10
@@ -255,7 +258,7 @@ class Controller:
   def set_heading(self,odom):
     ''' go towards given waypoint '''
     if len(self.path) == 0 or self.path_index > len(self.path):
-      print 'No path'
+      # print 'No path' # UNCOMMENT
       return
     ### GET BOT LOCATION
     self.bot_x = odom.pose.pose.position.x
@@ -273,17 +276,20 @@ class Controller:
       self.path_index += 1
     waypoint = self.path[self.path_index]
     waypoint_x, waypoint_y = waypoint
-    print waypoint
+    # print waypoint
+
     ### CALCULATE WHERE TO GO
     next_distance, next_angle = self.recalculate(waypoint)
     print 'Bot Location:', (self.bot_x, self.bot_y, bot_heading)
     print 'Nxt Waypoint:', waypoint
     print [next_distance, next_angle]
+    print '  '
+
     ### NAVIGATE BOT
     error = calculate_angle_error(bot_heading, next_angle)
     if abs(error) > self.heading_threshold:
-      # print 'error', error
-      # print 'spin'
+      # print 'error', error # UNCOMMENT
+      # print 'spin' # UNCOMMENT
       proportional_speed = error * self.spin_factor
       if proportional_speed > self.max_spin:
         spin_speed = self.max_spin
@@ -293,8 +299,8 @@ class Controller:
         spin_speed = proportional_speed
       self.spin(spin_speed)
     elif next_distance > self.dist_threshold:
-      # print 'dist', next_distance
-      # print 'forward'
+      # print 'dist', next_distance # UNCOMMENT
+      # print 'forward' # UNCOMMENT
       self.forward(0.1)
 
   def react_scan(self, scan):
@@ -306,13 +312,13 @@ class Controller:
     for pt in xy_points:
       rounded_pt = self.graph.round_to_node(pt)
       if self.graph.is_active_node(rounded_pt):
-        print rounded_pt
+        # print rounded_pt # UNCOMMENT
         self.graph.add_obstacle(rounded_pt)
         obstacle_found = True
     if obstacle_found:
       rounded_bot_location = self.graph.round_to_node((self.bot_x, self.bot_y))
-      self.path = self.graph.navigate(rounded_bot_location, self.goal)
-      self.path_changed = True
+      # self.path = self.graph.navigate(rounded_bot_location, self.goal)
+      # self.path_changed = True
     # self.graph.print_graph()
 
   def stop(self):
