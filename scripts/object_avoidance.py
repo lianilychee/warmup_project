@@ -92,7 +92,7 @@ class Graph:
           self.add_edge((i, j), (i, clean(j + self.grid_spacing)))
 
   def add_obstacle(self, pt):
-    self.grow_grid(pt)
+    # self.grow_grid(pt)
     impact_crater = (self.blast_radius / self.grid_spacing) + 1
     self.remove_point(pt, impact_crater)
 
@@ -113,12 +113,10 @@ class Graph:
 
   def neighbors(self, pt):
     pt = (clean(pt[0]), clean(pt[1]))
-    return self.edges[pt]
+    return self.edges.get(pt, [])
 
   def cost(self, pt1, pt2):
-    (x1, y1) = pt1
-    (x2, y2) = pt2
-    return clean(math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2))
+    return clean(distance(pt1, pt2))
 
   def heuristic(self, a, b):
     (x1, y1) = a
@@ -166,15 +164,20 @@ class Graph:
     strings = []
     horiz_size = int((self.right_bound - self.left_bound) / self.grid_spacing + 1)
     vert_size = int((self.top_bound - self.bottom_bound) / self.grid_spacing + 1)
+    print horiz_size
+    print vert_size
     for j in range(vert_size):
-      strings.append('  ' * horiz_size)
+      strings.append('.' * horiz_size)
     for pt in self.edges.keys():
       (x, y) = pt
       row = int((y - self.bottom_bound)/(self.top_bound - self.bottom_bound) * vert_size) -1
-      col = int((x - self.left_bound)/(self.right_bound - self.left_bound) * horiz_size)*2 -1
-      strings[row] = strings[row][0:col] + '. ' + strings[row][col + 2:]
+      col = int((x - self.left_bound)/(self.right_bound - self.left_bound) * horiz_size) -1
+      strings[row] = strings[row][0:col] + 'X' + strings[row][col + 1:]
+      if len(strings[row]) > horiz_size:
+        print (len(strings[row]), horiz_size)
+        print (row, col)
     for string in strings:
-      print string
+      print string + 'N'
 
 
 class GraphGenerator:
@@ -183,7 +186,7 @@ class GraphGenerator:
     self.start = start
     self.goal = goal
     self.grid_spacing = 0.1
-    self.padding = 0.2
+    self.padding = 2.0
 
   def calculate_bounds(self):
     (x1, y1) = self.start
@@ -214,107 +217,88 @@ class GraphGenerator:
 class Controller:
   def __init__(self):
     rospy.init_node('person_follow')
-    rospy.Subscriber('/odom', Odometry, self.hit_waypoint, queue_size=1)
+    rospy.Subscriber('/odom', Odometry, self.set_heading, queue_size=1)
     rospy.Subscriber('/scan', LaserScan, self.react_scan, queue_size=1)
     self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
     self.command = Twist()
     self.target = [0, 1]
-    self.threshold = 0.02
+    self.dist_threshold = 0.2
     self.stop()
     self.drive()
-    self.graph = GraphGenerator((0,0),(10, 0)).generate()
-    self.path = [(0,0)]
+    self.goal = (10, 0)
     self.bot_x = 0
     self.bot_y = 0
+    self.graph = GraphGenerator((0,0),self.goal).generate()
+    self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0))
+    self.path_index = 0
+    self.path_changed = False
+    self.heading_threshold = 10
+    self.spin_factor = 0.1
+    self.max_spin = .1
 
-  def recalculate(self,waypoint):
+  def recalculate(self, waypoint):
     ''' define waypoint in relation to base_link. return angle and distance. '''
 
     waypoint_x = waypoint[0]
     waypoint_y = waypoint[1]
 
-    next_distance = math.sqrt((waypoint_x-self.bot_x)**2 + (waypoint_y-self.bot_y)**2)
+    next_distance = distance((self.bot_x, self.bot_y), (waypoint_x, waypoint_y))
 
     # next_angle = math.atan( (waypoint_x-self.bot_x)/(waypoint_y-self.bot_y) ) # RADIANS
-
-    next_angle = math.degrees(math.atan((waypoint_x-self.bot_x)/(waypoint_y-self.bot_y))) # DEGREES
-
-    if next_angle < 0:
-      next_angle = next_angle + 360
+    if (waypoint_y-self.bot_y) != 0:
+      next_angle = math.degrees(math.atan2((waypoint_y - self.bot_y),(waypoint_x - self.bot_x)) % (math.pi*2)) # DEGREES
     else:
-      next_angle = next_angle
+      next_angle = 0
 
-    return next_distance, next_angle   
+    return next_distance, next_angle
 
-
-  # def hit_waypoint(odom,path,distance,angle): # UNCOMMENT
-  def hit_waypoint(self,odom):
+  def set_heading(self,odom):
     ''' go towards given waypoint '''
-
+    if len(self.path) == 0 or self.path_index > len(self.path):
+      print 'No path'
+      return
     ### GET BOT LOCATION
     self.bot_x = odom.pose.pose.position.x
+    self.bot_y = odom.pose.pose.position.y
 
-    # eliminates dividing by zero error
-    if odom.pose.pose.position.x == 0:
-      self.bot_y = odom.pose.pose.position.y + 0.001
-    else:
-      self.bot_y = odom.pose.pose.position.y
-
-self.path
     ### GET CURRENT BOT HEADING
-    bot_heading = convert_pose_to_xy_and_theta(odom)
-
+    bot_heading = calculate_yaw(odom)
 
     ### GET WAYPOINT. need to loop through the path
-    path = self.path[1:]
-    waypoint = path[0]
-    waypoint_x = waypoint[0]
-    waypoint_y = waypoint[1]
-
-    # UNCOMMENT
-    # print 'current location ', (self.bot_x,self.bot_y)
-    # print 'going to waypoint ', waypoint
-
-
+    if self.path_changed:
+      self.path_index = 0
+      self.path_changed = False
+    if distance((self.bot_x, self.bot_y), self.path[self.path_index]) < self.dist_threshold:
+      print 'Hit Waypoint:', self.path[self.path_index]
+      self.path_index += 1
+    waypoint = self.path[self.path_index]
+    waypoint_x, waypoint_y = waypoint
+    print waypoint
     ### CALCULATE WHERE TO GO
-    [next_distance, next_angle] = self.recalculate(waypoint)
-
-    # UNCOMMENT
-    # print 'bot heading: ',bot_heading, 'next angle',next_angle
-    # print ' '
-
-    # if (bot_heading-next_angle < 0.05):
-    #   selfpath.spin_right()
-    # elif (bot_heading-next_angle > 0.05):
-    #   self.spin_left()
-    # else:
-    #   self.forward(0.05)
-
-
+    next_distance, next_angle = self.recalculate(waypoint)
+    print 'Bot Location:', (self.bot_x, self.bot_y, bot_heading)
+    print 'Nxt Waypoint:', waypoint
+    print [next_distance, next_angle]
     ### NAVIGATE BOT
-    # if bot_heading != angle to wpoint, continue spinning
-    if (abs(bot_heading-next_angle) > 5):
-      self.spin_left()
-    else:
-      self.forward(0.05)
-
-    # if bot_location = waypoint, stop
-    if (abs(self.bot_x-waypoint_x) < self.threshold) and (abs(self.bot_y-waypoint_y) < self.threshold):
-      self.stop()
-      print "current location", self.bot_x, self.bot_y
-      print 'HIT waypoint', waypoint
-      print ' '
-
-
-    # if not (abs(self.bot_x-waypoint_x) > self.threshold) or not (abs(self.bot_y-waypoint_y) > self.threshold):
-    #   # print(abs(self.bot_x-waypoint_x) > self.threshold)
-    #   self.stop()
-    #   print "current location", self.bot_x, self.bot_y
-    #   print 'HIT waypoint', waypoint
-    #   print ' '
-
+    error = calculate_angle_error(bot_heading, next_angle)
+    if abs(error) > self.heading_threshold:
+      # print 'error', error
+      # print 'spin'
+      proportional_speed = error * self.spin_factor
+      if proportional_speed > self.max_spin:
+        spin_speed = self.max_spin
+      elif proportional_speed < -self.max_spin:
+        spin_speed = -self.max_spin
+      else:
+        spin_speed = proportional_speed
+      self.spin(spin_speed)
+    elif next_distance > self.dist_threshold:
+      # print 'dist', next_distance
+      # print 'forward'
+      self.forward(0.1)
 
   def react_scan(self, scan):
+    obstacle_found = False
     xy_points = []
     for t in range(len(scan.ranges)):
       if scan.ranges[t] > 0:
@@ -322,33 +306,28 @@ self.path
     for pt in xy_points:
       rounded_pt = self.graph.round_to_node(pt)
       if self.graph.is_active_node(rounded_pt):
+        print rounded_pt
         self.graph.add_obstacle(rounded_pt)
-    # self.path = self.graph.navigate((self.bot_x, self.bot_y),(10, 0)) # UNCOMMENT
-    self.path = [(1,1),(1,2),(2,1)]
-    #self.graph.print_graph()
+        obstacle_found = True
+    if obstacle_found:
+      rounded_bot_location = self.graph.round_to_node((self.bot_x, self.bot_y))
+      self.path = self.graph.navigate(rounded_bot_location, self.goal)
+      self.path_changed = True
+    # self.graph.print_graph()
 
   def stop(self):
     ''' stop all bot motion '''
     self.command.linear.x = 0
     self.pub.publish(self.command)
 
-  def spin_left(self):
-    ''' spin bot left '''
+  def spin(self, speed):
+    ''' spin bot '''
     self.command.linear.x = 0
     self.command.linear.y = 0
     self.command.linear.z = 0
     self.command.angular.x = 0
     self.command.angular.y = 0  
-    self.command.angular.z = 0.3
-
-  def spin_right(self):
-    ''' spin bot right '''
-    self.command.linear.x = 0
-    self.command.linear.y = 0
-    self.command.linear.z = 0
-    self.command.angular.x = 0
-    self.command.angular.y = 0  
-    self.command.angular.z = -0.3
+    self.command.angular.z = speed
 
   def forward(self, x):
     ''' drive bot forward '''
@@ -371,12 +350,8 @@ def tr_to_xy(pair):
   ''' convert a theta, radius pair to an x, y pair '''
   angle, radius = pair[0], pair[1]
   # RADIANS
-  # x = radius * math.cos(math.radians(angle))
-  # y = radius * math.sin(math.radians(angle))
-
-  # DEGREES
-  x = radius * math.degrees(math.cos(math.radians(angle)))
-  y = radius * math.degrees(math.sin(math.radians(angle)))
+  x = radius * math.cos(math.radians(angle))
+  y = radius * math.sin(math.radians(angle))
 
   return [x,y]
 
@@ -392,22 +367,29 @@ def xy_to_tr(pair):
   radius = math.sqrt(x ** 2 + y ** 2)
   return [theta, radius]
 
-def convert_pose_to_xy_and_theta(odom):
+def calculate_yaw(odom):
     """ Convert pose (geometry_msgs.Pose) to a (x,y,yaw) tuple """
     orientation_tuple = (odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w)
     angles = euler_from_quaternion(orientation_tuple)
-    # return pose.position.x, pose.position.y, angles[2]
-    # return angles[2] # RADIANS
     yaw = math.degrees(angles[2])
 
     # keep yaw positive and non-dependent upon spin direction
     if yaw < 0:
-      yaw = yaw + 360
+      return 360 + yaw
     else:
-      yaw = yaw
+      return yaw
 
-    return yaw
+def calculate_angle_error(current_angle, goal_angle):
+  diff = abs(current_angle - goal_angle)
+  if diff > 180:
+    return (360 - diff) if current_angle > goal_angle else -(360 - diff)
+  else:
+    return -diff if current_angle > goal_angle else diff
 
+def distance(pt1, pt2):
+  (x1, y1) = pt1
+  (x2, y2) = pt2
+  return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 controller = Controller()
 
