@@ -5,37 +5,43 @@ Getting Familiar with ROS
 ---
 Which behaviors did you implement?
 
-We implemented all three behaviors: wall-following, person-following, and obstacle avoidance.
-
+We implmented simple wall following behavior, used sklearn to test the boundaries of our person following behavior, really challenged ourselves to improve obstacle avoidance using A*, and cobbled together a simple finite state controller.
 
 ---
 For each behavior, what strategy did you use to implement the behavior? 
 
-WALL-FOLLOWING:  To wall-follow, the bot continuously maintains its distance from the wall by the difference in two scan points' distance readings.  These two points were selected by using rqt_gui to identify the angles at which the scan was returning non-zero values.
+WALL-FOLLOWING:  In such a multipart project, we prioritized which behaviors on which to challenge ourselves, and decided to implement only a simple wall-following algorithm. In our dead simple implementation, the neato checks the distances measured at 75 degrees and 105 degrees relative to baselink (both angles of which are 45 degrees on either side of 90). If the neato is traveling parallel to the wall, these distances should be the same. If they are not, the neato turns to correct the error. Once the error has been corrected, the neato continues forward. This method keeps the robot parallel to the wall, but does not necessarily ensure that the neato maintains a certain distance from the wall.
 
-PERSON-FOLLOWING:  We implemented independently of each other.  Liani divided the bot's front view of vision into three sections:  left, right, and center.  If nothing was detected in any section, the bot moved forward.  If something was detected in either the left or right sections, the bot would rotate accordingly.
+PERSON-FOLLOWING: In an effort to compare the effectiveness of difference algorithms, we each created our own person following implementation independently of each other.
+
+Liani divided the bot's front view of vision into three sections:  left, right, and center.  If nothing was detected in any section, the bot moved forward.  If something was detected in either the left or right sections, the bot would rotate accordingly.
 
 Ian used the clustering capabilities of scikit learn.  Any object scanned is abstracted to a cluster.  The clusters that are closest together are treated as feet/legs.  The bot will aim for the midpoint of the legs, then approach using proportional control.
 
-OBSTACLE AVOIDANCE:  To traverse a field full of obstacles, we set the bot's default motion to "forward."  When it detects an obstacle, it performs a side-stepping maneuver.  "Sidestepping" consists of rotating 90 degrees, moves forward a tad, turns (the opposite) 90 degrees, and continues on its merry way.
+OBSTACLE AVOIDANCE:  We attempted to implement Dikstra's A* algorithm for object avoidance. In theory the robot "lays down" a grid of nodes in front of it, and based on scan data, it eliminates nodes where obstacles have been detected. The A* algorithm can then calculate the appropriate path to the robot's destination.
 
 
 ---
 For the finite state controller, what were the states?  What did the robot do in each state?  How did you combine and how did you detect when to transition between behaviors?
 
-Our states consisted of detect obstacle and manuever obstacle.  
+In our finite state controller, the robot switches between wall following and person following. On launch, it begins to follow the wall, but when an obstacle is placed in front of it, it switches to person following mode, and continues in that mode until a person is no longer in the tracking box, at which time it reverts back to wall following.
+
+After spending a lot of time trying to get obstacle avoidance to work, we opted for a very simple finite state controller implementation which simply cobbled together our wall following and person following code.
+
+In our implementation, the behavior was determined by switching which callback function (wall following or person following) was allowed to react to the scan data. If one of situations mentioned above occured, the callback functions switched the state.
 
 
 ---
 How did you structure your code?
 
-In an object-oriented fashion?  Not quite sure how else to answer.
-
+The code was structured around a central Controller object which handled publishing commands and reacting to sensory data. The Controller kept track of the neato's state in each behavior implementation and the primary logic of each behavior implementation was contained within the methods of the Controller. Some helper functions which did not depend on the "self" of the Controller were defined at global scope.
 
 ---
 What, if any, challenges did you face along the way?
 
-OBSTACLE AVOIDANCE:  A* - so much sadness.  Generating accurate nodes proved challenging.
+PERSON FOLLOWING: Because nearby walls provide a wonderful source of positive laser scan data, it took a while to convince our neato that the wall was, in fact, not the target.
+
+OBSTACLE AVOIDANCE:  Implementing Dikstra's A* algorithm proved to be tremendously difficult. Semi-accurate laser scan data and inaccurate odomotry contributed to an A* implementation that was near impossible to debug.
 
 
 ---
@@ -51,4 +57,4 @@ OBSTACLE AVOIDANCE:  We would have liked to have used A*, rather than brute-forc
 ---
 Did you learn any interesting lessons for future robotic programming projects?
 
-
+We've learned that 'devide and conquer' is not an effective way to complete a robotic programming project of this type. Pair programming (and pair write-up-writing) will produce far higher quality results in the future.
